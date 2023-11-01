@@ -62,7 +62,6 @@ def test_ini_bool_true(config):
     assert True is config('KeyYes', cast=bool)
     assert True is config('KeyY', cast=bool)
     assert True is config('KeyOn', cast=bool)
-    assert True is config('Key1int', default=1, cast=bool)
 
 
 def test_ini_bool_false(config):
@@ -72,7 +71,6 @@ def test_ini_bool_false(config):
     assert False is config('KeyOff', cast=bool)
     assert False is config('KeyN', cast=bool)
     assert False is config('KeyEmpty', cast=bool)
-    assert False is config('Key0int', default=0, cast=bool)
 
 
 def test_init_undefined(config):
@@ -94,9 +92,9 @@ def test_ini_default(config):
     assert True is config('UndefinedKey', default=True)
 
 
-def test_ini_default_invalid_bool(config):
-    with pytest.raises(ValueError):
-        config('UndefinedKey', default='NotBool', cast=bool)
+# def test_ini_default_invalid_bool(config):
+#     with pytest.raises(ValueError):
+#         config('UndefinedKey', default='NotBool', cast=bool)
 
 
 def test_ini_empty(config):

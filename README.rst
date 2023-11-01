@@ -1,3 +1,7 @@
+This repository is a fork of https://github.com/HBNetwork/python-decouple, because I wanted a typed version.
+
+Below is the original README:
+
 Python Decouple: Strict separation of settings from code
 ========================================================
 

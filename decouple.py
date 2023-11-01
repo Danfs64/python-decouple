@@ -1,111 +1,17 @@
-# coding: utf-8
 import os
 import sys
 import string
-from shlex import shlex
-from io import open
 from collections import OrderedDict
+from configparser import ConfigParser, NoOptionError
+from io import open
+from shlex import shlex
+from typing import Callable, TypeVar
 
-# Useful for very coarse version differentiation.
-PYVERSION = sys.version_info
+text_type = str
 
-
-if PYVERSION >= (3, 0, 0):
-    from configparser import ConfigParser, NoOptionError
-    text_type = str
-else:
-    from ConfigParser import SafeConfigParser as ConfigParser, NoOptionError
-    text_type = unicode
-
-if PYVERSION >= (3, 2, 0):
-    read_config = lambda parser, file: parser.read_file(file)
-else:
-    read_config = lambda parser, file: parser.readfp(file)
-
+read_config = lambda parser, file: parser.read_file(file)
 
 DEFAULT_ENCODING = 'UTF-8'
-
-
-# Python 3.10 don't have strtobool anymore. So we move it here.
-TRUE_VALUES = {"y", "yes", "t", "true", "on", "1"}
-FALSE_VALUES = {"n", "no", "f", "false", "off", "0"}
-
-def strtobool(value):
-    if isinstance(value, bool):
-        return value
-    value = value.lower()
-
-    if value in TRUE_VALUES:
-        return True
-    elif value in FALSE_VALUES:
-        return False
-
-    raise ValueError("Invalid truth value: " + value)
-
-
-class UndefinedValueError(Exception):
-    pass
-
-
-class Undefined(object):
-    """
-    Class to represent undefined type.
-    """
-    pass
-
-
-# Reference instance to represent undefined values
-undefined = Undefined()
-
-
-class Config(object):
-    """
-    Handle .env file format used by Foreman.
-    """
-
-    def __init__(self, repository):
-        self.repository = repository
-
-    def _cast_boolean(self, value):
-        """
-        Helper to convert config values to boolean as ConfigParser do.
-        """
-        value = str(value)
-        return bool(value) if value == '' else bool(strtobool(value))
-
-    @staticmethod
-    def _cast_do_nothing(value):
-        return value
-
-    def get(self, option, default=undefined, cast=undefined):
-        """
-        Return the value for option or default if defined.
-        """
-
-        # We can't avoid __contains__ because value may be empty.
-        if option in os.environ:
-            value = os.environ[option]
-        elif option in self.repository:
-            value = self.repository[option]
-        else:
-            if isinstance(default, Undefined):
-                raise UndefinedValueError('{} not found. Declare it as envvar or define a default value.'.format(option))
-
-            value = default
-
-        if isinstance(cast, Undefined):
-            cast = self._cast_do_nothing
-        elif cast is bool:
-            cast = self._cast_boolean
-
-        return cast(value)
-
-    def __call__(self, *args, **kwargs):
-        """
-        Convenient shortcut to get.
-        """
-        return self.get(*args, **kwargs)
-
 
 class RepositoryEmpty(object):
     def __init__(self, source='', encoding=DEFAULT_ENCODING):
@@ -130,14 +36,16 @@ class RepositoryIni(RepositoryEmpty):
             read_config(self.parser, file_)
 
     def __contains__(self, key):
-        return (key in os.environ or
-                self.parser.has_option(self.SECTION, key))
+        return (
+            key in os.environ or
+            self.parser.has_option(self.SECTION, key)
+        )
 
     def __getitem__(self, key):
         try:
             return self.parser.get(self.SECTION, key)
-        except NoOptionError:
-            raise KeyError(key)
+        except NoOptionError as e:
+            raise KeyError(key) from e
 
 
 class RepositoryEnv(RepositoryEmpty):
@@ -177,15 +85,94 @@ class RepositorySecret(RepositoryEmpty):
         self.data = {}
 
         ls = os.listdir(source)
-        for file in ls:
-            with open(os.path.join(source, file), 'r') as f:
-                self.data[file] = f.read()
+        for file_ in ls:
+            with open(os.path.join(source, file_), 'r') as f:
+                self.data[file_] = f.read()
 
     def __contains__(self, key):
         return key in os.environ or key in self.data
 
     def __getitem__(self, key):
         return self.data[key]
+
+
+# Python 3.10 don't have strtobool anymore. So we move it here.
+TRUE_VALUES  = {"y", "yes", "t", "true",  "on",  "1"}
+FALSE_VALUES = {"n", "no",  "f", "false", "off", "0"}
+
+def strtobool(value: bool | str) -> bool:
+    if isinstance(value, bool):
+        return value
+    value = value.lower()
+
+    if value in TRUE_VALUES:
+        return True
+    elif value in FALSE_VALUES:
+        return False
+
+    raise ValueError(f"Invalid truth value: {value}")
+
+
+class UndefinedValueError(Exception):
+    pass
+
+
+class Undefined:
+    """Class to represent undefined type"""
+    pass
+
+
+# Reference instance to represent undefined values
+undefined = Undefined()
+
+# Typevars
+_Def = TypeVar('_Def')
+_Ret = TypeVar('_Ret')
+
+
+class Config(object):
+    """
+    Handle .env file format used by Foreman.
+    """
+
+    def __init__(self, repository: RepositoryEmpty) -> None:
+        self.repository = repository
+
+    def _cast_boolean(self, value: str) -> bool:
+        """
+        Helper to convert config values to boolean as ConfigParser do.
+        """
+        return strtobool(value) if value else False
+
+    # @staticmethod
+    # def _cast_do_nothing(value):
+    #     return value
+
+    def get(self, option: str, *, default: _Def | Undefined = undefined, cast: Callable[[str], _Ret] = str) -> _Def | _Ret:
+        """Return the casted value (str as default) for option, or default if defined."""
+
+        # We can't avoid __contains__ because value may be empty.
+        if option in os.environ:
+            value = os.environ[option]
+        elif option in self.repository:
+            value = self.repository[option]
+        elif isinstance(default, Undefined):
+            raise UndefinedValueError(
+                f'{option} not found. Declare it as envvar or define a default value.'
+            )
+        else:
+            return default
+
+        if cast is bool:
+            cast = self._cast_boolean
+
+        return cast(value)
+
+    def __call__(self, option: str, *, default: _Def | Undefined = undefined, cast: Callable[[str], _Ret] = str) -> _Def | _Ret:
+        """
+        Convenient shortcut to get.
+        """
+        return self.get(option, default=default, cast=cast)
 
 
 class AutoConfig(object):
@@ -241,16 +228,24 @@ class AutoConfig(object):
         path = os.path.dirname(frame.f_back.f_back.f_code.co_filename)
         return path
 
-    def __call__(self, *args, **kwargs):
+    # I don't like the practice of using __call__ for objects, so I decided to create a method instead
+    def get(self, option: str, *, default: _Def | Undefined = undefined, cast: Callable[[str], _Ret] = str) -> _Def | _Ret:
         if not self.config:
             self._load(self.search_path or self._caller_path())
 
-        return self.config(*args, **kwargs)
+        return self.config.get(option, default=default, cast=cast)
+
+    # I still have the __call__ for backwards compatibility, but I am really tempted to remove it
+    def __call__(self, option: str, *, default: _Def | Undefined = undefined, cast: Callable[[str], _Ret] = str) -> _Def | _Ret:
+        return self.get(option, default=default, cast=cast)
 
 
-# A pré-instantiated AutoConfig to improve decouple's usability
+# A pre-instantiated AutoConfig to improve decouple's usability
 # now just import config and start using with no configuration.
-config = AutoConfig()
+_config = AutoConfig()
+
+# Danfs' note: instead of exporting the whole object, I'd rather expose only the `.get` method
+config = _config.get
 
 # Helpers
 
@@ -308,9 +303,9 @@ class Choices(object):
 
     def __call__(self, value):
         transform = self.cast(value)
-        if transform not in self._valid_values:
-            raise ValueError((
-                    'Value not in list: {!r}; valid values are {!r}'
-                ).format(value, self._valid_values))
-        else:
+        if transform in self._valid_values:
             return transform
+
+        raise ValueError((
+            'Value not in list: {!r}; valid values are {!r}'
+        ).format(value, self._valid_values))

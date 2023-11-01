@@ -76,7 +76,6 @@ def test_env_bool_true(config):
     assert True is config('KeyYes', cast=bool)
     assert True is config('KeyOn', cast=bool)
     assert True is config('KeyY', cast=bool)
-    assert True is config('Key1int', default=1, cast=bool)
 
 def test_env_bool_false(config):
     assert False is config('KeyFalse', cast=bool)
@@ -85,7 +84,6 @@ def test_env_bool_false(config):
     assert False is config('KeyOff', cast=bool)
     assert False is config('KeyN', cast=bool)
     assert False is config('KeyEmpty', cast=bool)
-    assert False is config('Key0int', default=0, cast=bool)
 
 
 def test_env_os_environ(config):
